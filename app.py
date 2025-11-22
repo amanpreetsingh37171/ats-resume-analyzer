@@ -113,7 +113,9 @@ if uploaded_file is not None and extract_button:
     # so we detect PDF by magic bytes or filename extension and fall back to image extraction.
     uploaded_file.seek(0)
     raw = uploaded_file.read()
-    import io as _io, imghdr, binascii
+    import io as _io
+    import imghdr
+    import binascii
     buf = _io.BytesIO(raw)
 
     # Debug info for troubleshooting mobile uploads (also write a small server-side log)
