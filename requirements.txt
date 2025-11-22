@@ -1,0 +1,10 @@
+streamlit
+pandas
+scikit-learn
+joblib
+nltk
+matplotlib
+pdfplumber
+pillow
+pytesseract
+scipy

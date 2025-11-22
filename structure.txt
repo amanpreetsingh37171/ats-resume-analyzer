@@ -1,0 +1,14 @@
+ats-resume-analyzer/
+├── README.md
+├── requirements.txt
+├── sample_data.csv # small sample dataset for training/demo
+├── train_model.py # script to train a TF-IDF + LogisticRegression model
+├── app/
+│ ├── streamlit_app.py # main Streamlit app
+│ ├── resume_parser.py # functions to extract text from PDF/DOCX/TXT
+│ └── helpers.py # helper functions (scoring, highlighting)
+├── models/
+│ ├── tfidf.joblib # saved vectorizer (created after training)
+│ └── model.joblib # saved classifier (created after training)
+└── assets/
+└── example_resume.pdf
