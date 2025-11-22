@@ -39,6 +39,9 @@ st.title('ATS Resume Analyzer')
 st.sidebar.header('Options')
 uploaded_file = st.sidebar.file_uploader('Upload resume (pdf / png / jpg)', type=['pdf','png','jpg','jpeg'])
 upload_model = st.sidebar.file_uploader('(Optional) Upload trained artifacts zip (model + vectorizer)', type=['zip'])
+# Always render the Extract & Predict button (so it appears in the deployed app UI). We
+# capture the click into `extract_button` and use it below only when a file is uploaded.
+extract_button = st.sidebar.button('Extract & Predict')
 run_button = st.sidebar.button('Load model / Predict')
 
 # Auto-detect artifacts directory on startup so model is always available when the app runs.
@@ -100,13 +103,109 @@ if upload_model is not None:
     else:
         st.sidebar.error('Artifacts extracted but model failed to load; check files.')
 
-if uploaded_file is not None and st.sidebar.button('Extract & Predict'):
+if uploaded_file is None:
+    st.sidebar.info('Upload a resume file to enable the Extract & Predict action.')
+
+if uploaded_file is not None and extract_button:
     # extract text
     text = ''
-    if uploaded_file.type == 'application/pdf':
-        text = extract_text_from_pdf(uploaded_file)
+    # Read raw bytes once — mobile browsers sometimes omit or set incorrect MIME types,
+    # so we detect PDF by magic bytes or filename extension and fall back to image extraction.
+    uploaded_file.seek(0)
+    raw = uploaded_file.read()
+    import io as _io, imghdr, binascii
+    buf = _io.BytesIO(raw)
+
+    # Debug info for troubleshooting mobile uploads (also write a small server-side log)
+    try:
+        meta = f"Uploaded: {getattr(uploaded_file, 'name', '<unknown>')} | type: {getattr(uploaded_file, 'type', '<none>')} | size: {len(raw)} bytes"
+        st.sidebar.write(meta)
+        st.sidebar.write('First bytes: ' + binascii.hexlify(raw[:16]).decode(errors='ignore'))
+        # append to debug log
+        try:
+            logp = Path(__file__).resolve().parent / 'tmp'
+            logp.mkdir(exist_ok=True)
+            with open(logp / 'upload_debug.log', 'a', encoding='utf-8') as lf:
+                lf.write(meta + '\n')
+                lf.write('first_bytes:' + binascii.hexlify(raw[:32]).decode() + '\n')
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Detect pdf by magic bytes, filename, or MIME type
+    is_pdf = False
+    if (len(raw) >= 4 and raw[:4] == b'%PDF') or (hasattr(uploaded_file, 'type') and getattr(uploaded_file, 'type') == 'application/pdf') or (hasattr(uploaded_file, 'name') and getattr(uploaded_file, 'name').lower().endswith('.pdf')):
+        is_pdf = True
+
+    # Detect common image formats
+    img_format = None
+    try:
+        img_format = imghdr.what(None, h=raw)
+    except Exception:
+        img_format = None
+
+    # Detect HEIC/HEIF by ftyp box
+    heic = False
+    try:
+        if b'ftypheic' in raw[:64] or b'ftypheix' in raw[:64] or b'ftyphevc' in raw[:64] or b'ftypmif1' in raw[:64]:
+            heic = True
+    except Exception:
+        heic = False
+
+    # If mobile returned HEIC, try to convert if pillow_heif is available
+    if heic:
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+            buf.seek(0)
+            from PIL import Image
+            img = Image.open(buf).convert('RGB')
+            out = _io.BytesIO()
+            img.save(out, format='JPEG')
+            raw = out.getvalue()
+            buf = _io.BytesIO(raw)
+            img_format = 'jpeg'
+            st.sidebar.info('HEIC image converted to JPEG on server (pillow_heif available).')
+        except Exception:
+            st.sidebar.warning('HEIC image detected. If extraction fails, convert the image to JPG/PNG on your phone before uploading.')
+
+    # If file size looks very large, warn the user (common on mobile photos)
+    if len(raw) > 10 * 1024 * 1024:
+        st.sidebar.warning('Uploaded file is large (>10MB). Mobile uploads can fail if the host blocks large files. Consider compressing.')
+
+    # Extraction
+    if is_pdf:
+        try:
+            buf.seek(0)
+            text = extract_text_from_pdf(buf)
+        except Exception as e:
+            try:
+                text = extract_text_from_pdf(_io.BytesIO(raw))
+            except Exception as e2:
+                st.error('Failed to extract text from PDF: ' + str(e2))
+                text = ''
     else:
-        text = extract_text_from_image(uploaded_file)
+        # If imghdr couldn't detect format but filename indicates image, still try
+        if img_format is None and (hasattr(uploaded_file, 'name') and getattr(uploaded_file, 'name').lower().endswith(('.png', '.jpg', '.jpeg'))):
+            img_format = 'jpeg'
+        if img_format is None and not heic:
+            st.sidebar.info('Uploaded file does not look like a standard image (imghdr unknown). We will still try image OCR.')
+        try:
+            buf.seek(0)
+            text = extract_text_from_image(buf)
+        except Exception as e:
+            try:
+                text = extract_text_from_image(_io.BytesIO(raw))
+            except Exception as e2:
+                st.error('Failed to extract text from image: ' + str(e2))
+                text = ''
+
+    # Provide a paste-text fallback for mobile users
+    if not text.strip():
+        pasted = st.sidebar.text_area('Or paste resume text here (mobile fallback)', value='')
+        if pasted and not text:
+            text = pasted
     st.subheader('Extracted text')
     st.text_area('Resume text', value=text, height=300)
 
