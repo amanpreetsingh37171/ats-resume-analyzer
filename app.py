@@ -114,7 +114,10 @@ if uploaded_file is not None and extract_button:
     uploaded_file.seek(0)
     raw = uploaded_file.read()
     import io as _io
-    import imghdr
+    try:
+        import imghdr
+    except Exception:
+        imghdr = None
     import binascii
     buf = _io.BytesIO(raw)
 
@@ -142,10 +145,12 @@ if uploaded_file is not None and extract_button:
 
     # Detect common image formats
     img_format = None
-    try:
-        img_format = imghdr.what(None, h=raw)
-    except Exception:
-        img_format = None
+    img_format = None
+    if imghdr is not None:
+        try:
+            img_format = imghdr.what(None, h=raw)
+        except Exception:
+            img_format = None
 
     # Detect HEIC/HEIF by ftyp box
     heic = False
