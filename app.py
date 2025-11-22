@@ -10,7 +10,7 @@ try:
     from model.predict import Predictor
 except Exception:
     try:
-        from models.predict import Predictor
+        from model.predict import Predictor
     except Exception:
         # fallback: load Predictor directly from an expected file path
         import importlib.util
